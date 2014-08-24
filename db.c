@@ -23,12 +23,15 @@
 #define DB_MAGIC	0x424400
 #define DB_VERSION	1
 
+/* Changeable,fixed in compile age */
 #define TABLE_LEN	(256)
 #define TABLE_SIZE	(TABLE_LEN * sizeof(struct table))
 
+/* Changeable,init size depends on TABLE_LEN and hash function */
 #define SLOT_LEN	(TABLE_LEN * 256)
 #define SLOT_SIZE	(SLOT_LEN * sizeof(struct slot))
 
+/* Changeable,init size. */
 #define DB_SIZE		(DB_HEADER_SIZE + TABLE_SIZE + SLOT_SIZE + 65535)
 
 #define PAGE_ALIGN(ptr,pgsize)	\
@@ -255,6 +258,8 @@ db_alloc(db_t *db, uint64_t len)
 {
 	uint64_t ptr;
 	if ((db->db_free_ptr + len) > db->db_size) {
+
+		/* Changeable,time and space tradeoff */
 		size_t newsize = (db->db_free_ptr + len) * 2;
 
 		if (db_file_resize(db, newsize) != DB_OK) {
@@ -419,7 +424,7 @@ db_put(db_t *db, const void *key, uint32_t klen, const void *val, uint32_t vlen)
 	slot.hash = hash;
 	slot.ptr  = data - len;
 
-	table = &(db->tables[hash & 0xFF]);
+	table = &(db->tables[hash % TABLE_LEN]);
 	ptr = db_slot_find(db, table->slot_ptr, table->slot_len, hash, key, klen);
 	if (ptr == 0)
 		return DB_ERR;
@@ -429,7 +434,7 @@ db_put(db_t *db, const void *key, uint32_t klen, const void *val, uint32_t vlen)
 
 	table->slot_key = table->slot_key + 1;
 	if ((table->slot_key * 2) > table->slot_len) {
-		if (db_rehash(db, hash & 0xFF) != DB_OK)
+		if (db_rehash(db, hash % TABLE_LEN) != DB_OK)
 			return DB_ERR;
 	}
 
@@ -444,7 +449,7 @@ db_get(db_t *db, const void *key, uint32_t klen, void *val, uint32_t vlen)
 	uint64_t data;
 
 	const uint64_t      hash  = db_hash(key, klen);
-	const struct table *table = &db->tables[hash & 0xFF];
+	const struct table *table = &db->tables[hash % TABLE_LEN];
 
 	ptr = db_slot_find(db, table->slot_ptr, table->slot_len, hash, key, klen);
 	if (ptr == 0)
