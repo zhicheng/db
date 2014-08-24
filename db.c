@@ -16,18 +16,17 @@
 #include <sys/mman.h>
 
 /*
- *  len for count
- * size for bytes
+ *  len for count,size for bytes.
  */
 
 #define DB_MAGIC	0x424400
 #define DB_VERSION	1
 
-/* Changeable,fixed in compile age */
+/* Changeable,fixed in compile age. */
 #define TABLE_LEN	(256)
 #define TABLE_SIZE	(TABLE_LEN * sizeof(struct table))
 
-/* Changeable,init size depends on TABLE_LEN and hash function */
+/* Changeable,init size depends on TABLE_LEN and hash function. */
 #define SLOT_LEN	(TABLE_LEN * 256)
 #define SLOT_SIZE	(SLOT_LEN * sizeof(struct slot))
 
@@ -300,8 +299,6 @@ db_rehash(db_t *db, uint32_t table)
 	uint64_t slot_new_ptr;
 	uint64_t slot_new_len;
 
-	int rehashed = 1;
-
 	/* alloc new slot if not did before */
 	if (db->db_slot_new_ptr == 0) {
 		slot_new_len = db->db_slot_len * 2;
@@ -332,6 +329,7 @@ db_rehash(db_t *db, uint32_t table)
 		ptr = db_slot_find(db, slot_new_ptr, slot_new_len, slot.hash, NULL, 0);
 
 		/*
+		 * FIXME: should add a way to rehash all tables
 		 * this fault is a table when rehash and need rehash again
 		 * change another hash algorithm
 		 */
@@ -347,6 +345,7 @@ db_rehash(db_t *db, uint32_t table)
 	db_sync(db, DB_HEADER_SIZE, TABLE_SIZE);
 	db_sync(db, slot_new_ptr, slot_new_len * sizeof(struct slot));
 
+	int rehashed = 1;
         for (i = 0; i < TABLE_LEN; i++) {
 		struct table *table = &db->tables[i];
 
