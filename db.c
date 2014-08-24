@@ -294,6 +294,7 @@ int
 db_rehash(db_t *db, uint32_t table)
 {
 	int i;
+	int rehashed;
 	uint64_t slot_ptr;
 	uint64_t slot_len;
 	uint64_t slot_new_ptr;
@@ -345,7 +346,7 @@ db_rehash(db_t *db, uint32_t table)
 	db_sync(db, DB_HEADER_SIZE, TABLE_SIZE);
 	db_sync(db, slot_new_ptr, slot_new_len * sizeof(struct slot));
 
-	int rehashed = 1;
+	rehashed = 1;
         for (i = 0; i < TABLE_LEN; i++) {
 		struct table *table = &db->tables[i];
 
