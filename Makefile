@@ -1,6 +1,6 @@
 CC = cc
 
-CFLAGS = -O2 -Wall -Werror -Wno-long-long -ansi -pedantic
+CFLAGS = -O2 -Wall -Werror -Wno-long-long -ansi -pedantic -g
 
 SRC = hash.c db.c
 OBJ = $(SRC:.c=.o)

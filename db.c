@@ -406,7 +406,7 @@ db_put(db_t *db, const void *key, uint32_t klen, const void *val, uint32_t vlen)
 	struct slot slot;
 
 	const uint64_t hash  = db_hash(key, klen);
-	struct table  *table = &db->tables[hash & 0xFF];
+	struct table  *table;
 
 	len  = sizeof(uint32_t) * 2 + klen + vlen;
 	data = db_alloc(db, len);
@@ -419,6 +419,7 @@ db_put(db_t *db, const void *key, uint32_t klen, const void *val, uint32_t vlen)
 	slot.hash = hash;
 	slot.ptr  = data - len;
 
+	table = &(db->tables[hash & 0xFF]);
 	ptr = db_slot_find(db, table->slot_ptr, table->slot_len, hash, key, klen);
 	if (ptr == 0)
 		return DB_ERR;
