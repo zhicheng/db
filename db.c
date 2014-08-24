@@ -15,6 +15,11 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
+/*
+ *  len for count
+ * size for bytes
+ */
+
 #define DB_MAGIC	0x424400
 #define DB_VERSION	1
 
@@ -94,7 +99,7 @@ db_open(db_t *db, const char *filename, int mode)
 
 	db->db_pgsize = sysconf(_SC_PAGESIZE);
 
-	db_likely(db, 0, DB_HEADER_SIZE + TABLE_LEN);
+	db_likely(db, 0, DB_HEADER_SIZE + TABLE_SIZE);
 
 	return DB_OK;
 }
@@ -360,7 +365,8 @@ db_rehash(db_t *db, uint32_t table)
  * will find the right slot for key
  */
 static uint64_t
-db_slot_find(db_t *db, uint64_t ptr, uint64_t slot_len, uint64_t hash, const void *key, uint32_t klen)
+db_slot_find(db_t *db, uint64_t ptr, uint64_t slot_len,
+	uint64_t hash, const void *key, uint32_t klen)
 {
 	uint64_t i;
 	uint64_t j;

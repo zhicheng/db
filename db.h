@@ -7,9 +7,9 @@
 enum {DB_ERR = -1, DB_OK = 0};
 
 struct table {
-        uint64_t slot_ptr;	/* in disk              */
-        uint64_t slot_key;	/* key in use           */
-        uint64_t slot_len;	/* slots in table       */
+        uint64_t slot_ptr;	/* pos in file		*/
+        uint64_t slot_key;	/* key in use		*/
+        uint64_t slot_len;	/* slots in table	*/
 };
 
 struct slot {
