@@ -1,0 +1,7 @@
+*.o
+*.dSYM
+
+db-bench
+db-get
+db-put
+db-stat
