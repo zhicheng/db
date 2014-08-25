@@ -27,9 +27,10 @@ db_close(&db);
 Limited:
 ========
 
-In 32 bit platform database file size is limited 4GiB
+In 32 bit platform database file size is limited 4GiB*
 
 Key/value length is 32 bit unsigned int
+
 
 Design:
 ======
@@ -95,6 +96,43 @@ Design:
                 |    .     |
                 |    .     |
                 +----------+
+
+
+Goal
+====
+
+Keep it simple, stupid
+
+
+FAQ
+===
+
+Q: Do you use `mmap'? What if I don't want use `mmap'?
+A: Yes.Just use others,there is a lot of key/value database you can choose.
+
+Q: I tried this library,It's wast to much disk space and memory!
+A: I'll write compaction function later,will reduce disk space use.
+   Memory is control by the kernel,Sorry.
+
+Q: Compression?
+A: Maybe.
+
+Q: Encryption?
+A: Maybe.
+
+Q: I use this in my Web Server,I have a problem!
+A: Please contact the author.
+
+Q: I use this in my Mobile Phone,I have a problem!
+A: Please contact the author.
+
+Q: I want do X,Will be OK?
+A: Just try.If don't,Please contact the author.
+
+Q: I have a problem!
+A: Please contact the author.
+
+
 
 License:
 ========
