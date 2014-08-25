@@ -31,6 +31,8 @@ In 32 bit platform database file size is limited 4GiB*
 
 Key/value length is 32 bit unsigned int
 
+*Depends Your Operation System,Mostly can't get 4GiB map
+
 
 Design:
 ======
@@ -98,14 +100,14 @@ Design:
                 +----------+
 
 
-Goal
-====
+Goal:
+=====
 
 Keep it simple, stupid
 
 
-FAQ
-===
+FAQ:
+====
 
 Q: Do you use `mmap'? What if I don't want use `mmap'?
 A: Yes.Just use others,there is a lot of key/value database you can choose.
