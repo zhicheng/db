@@ -1,7 +1,7 @@
 #include "hash.h"
 
-uint64_t
-murmur3_hash(const void *key, size_t len, uint64_t seed)
+static uint64_t
+murmur3_hash64(const void *key, size_t len, uint64_t seed)
 {
 	const uint64_t m = UINT64_C(0xc6a4a7935bd1e995);
 	const int r = 47;
@@ -43,9 +43,10 @@ murmur3_hash(const void *key, size_t len, uint64_t seed)
 	return h;
 }
 
+
 uint64_t
 db_hash(const void *key, size_t len)
 {
-	return murmur3_hash(key, len, 0);
+	return murmur3_hash64(key, len, 0);
 }
 
