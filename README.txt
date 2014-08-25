@@ -1,7 +1,7 @@
 
 Simple Hash DB for C
 
-Still Working on It.DO NOT use
+Still Working on It,DO NOT USE.
 
 
 Demo:
@@ -131,7 +131,6 @@ A: Just try.If don't,Please contact the author.
 
 Q: I have a problem!
 A: Please contact the author.
-
 
 
 License:
