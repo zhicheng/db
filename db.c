@@ -156,7 +156,7 @@ db_file_resize(db_t *db, size_t size)
 	return DB_OK;
 }
 
-int
+static int
 db_read(db_t *db, void *buf, off_t off, size_t len)
 {
 	assert(off + len < db->db_size);
@@ -165,7 +165,7 @@ db_read(db_t *db, void *buf, off_t off, size_t len)
 	return len;
 }
 
-int
+static int
 db_write(db_t *db, const void *buf, off_t off, size_t len)
 {
 	assert(off + len < db->db_size);
@@ -174,21 +174,13 @@ db_write(db_t *db, const void *buf, off_t off, size_t len)
 	return len;
 }
 
-int
+static int
 db_cmp(db_t *db, const void *buf, off_t off, size_t len)
 {
 	assert(off + len < db->db_size);
 
 	return memcmp((uint8_t *)db->db_data + off, buf, len);
 }
-
-/*
-static void
-db_copy(db_t *db, off_t dst, off_t src, size_t len)
-{
-	memcpy((uint8_t *)db->db_data + dst, (uint8_t *)db->db_data + src, len);
-}
-*/
 
 static int
 db_mmap(db_t *db)
@@ -252,7 +244,7 @@ db_unlikely(db_t *db, off_t off, size_t len)
 	return DB_OK;
 }
 
-uint64_t
+static uint64_t
 db_alloc(db_t *db, uint64_t len)
 {
 	uint64_t ptr;
@@ -278,7 +270,7 @@ db_alloc(db_t *db, uint64_t len)
 	return ptr;
 }
 
-uint64_t
+static uint64_t
 db_calloc(db_t *db, uint64_t len)
 {
 	uint64_t ptr = db_alloc(db, len);
@@ -290,8 +282,8 @@ db_calloc(db_t *db, uint64_t len)
 	return ptr;
 }
 
-int
-db_rehash(db_t *db, uint32_t table)
+static int
+db_table_rehash(db_t *db, uint32_t table)
 {
 	int i;
 	int rehashed;
@@ -329,11 +321,6 @@ db_rehash(db_t *db, uint32_t table)
 			continue;
 		ptr = db_slot_find(db, slot_new_ptr, slot_new_len, slot.hash, NULL, 0);
 
-		/*
-		 * FIXME: should add a way to rehash all tables
-		 * this fault is a table when rehash and need rehash again
-		 * change another hash algorithm
-		 */
 		if (ptr == 0)
 			return DB_ERR;
 
@@ -366,8 +353,40 @@ db_rehash(db_t *db, uint32_t table)
 	return DB_OK;
 }
 
+static int
+db_rehash(db_t *db, int table_hint)
+{
+	if (db->db_slot_new_ptr != 0 &&
+	    db->tables[table_hint].slot_ptr >= db->db_slot_new_ptr) {
+
+		/*
+		 * if Hash Collision too High or SLOT_LEN too Small
+		 * May Cause a table rehash again in rehash process
+		 * This make sure the rehash process finished early
+		 * Make table_hint rehash work
+		 *
+		 */
+		int i;
+		for (i = 0; i < TABLE_LEN; i++) {
+
+			/* rehash finished */
+			if (db->db_slot_new_ptr == 0)
+				break;
+
+			/* early rehash all old table */
+			if (db->tables[i].slot_ptr < db->db_slot_new_ptr) {
+				if (db_table_rehash(db, i) != DB_OK)
+					return DB_ERR;
+			}
+		}
+	}
+	return db_table_rehash(db, table_hint);
+}
+
+
 /*
  * will find the right slot for key
+ * return empty slot or the key is equal
  */
 static uint64_t
 db_slot_find(db_t *db, uint64_t ptr, uint64_t slot_len,

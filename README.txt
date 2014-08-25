@@ -35,7 +35,7 @@ Key/value length is 32 bit unsigned int
 
 
 Design:
-======
+=======
 
                 +----------+
                 |          |
@@ -112,7 +112,7 @@ FAQ:
 Q: Do you use `mmap'? What if I don't want use `mmap'?
 A: Yes.Just use others,there is a lot of key/value database you can choose.
 
-Q: I tried this library,It's wast to much disk space and memory!
+Q: I tried this library,It's waste to much disk space and memory!
 A: I'll write compaction function later,will reduce disk space use.
    Memory is control by the kernel,Sorry.
 
