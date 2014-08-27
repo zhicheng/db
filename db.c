@@ -250,8 +250,13 @@ db_alloc(db_t *db, uint64_t len)
 	uint64_t ptr;
 	if ((db->db_free_ptr + len) > db->db_size) {
 
+		size_t newsize = db->db_free_ptr + len;
+
 		/* Changeable,time and space tradeoff */
-		size_t newsize = (db->db_free_ptr + len) * 2;
+		if (newsize >= 0x8FFFFFFF)	/* 2GB */
+			newsize += 0xFFFFFFF;	/* pre alloc 256 MB */
+		else
+			newsize *= 2;		/* pre alloc double size */
 
 		if (db_file_resize(db, newsize) != DB_OK) {
 			perror("resize");
