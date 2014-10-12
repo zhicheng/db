@@ -5,3 +5,5 @@ db-bench
 db-get
 db-put
 db-stat
+db-del
+db-iter
