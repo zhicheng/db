@@ -10,11 +10,9 @@ int
 main(int argc, char *argv[])
 {
 	db_t db;
-	char val[1024];
-	uint32_t vlen;
 
 	if (argc != 4) {
-		fprintf(stderr, "usage: %s [databfile] [indexfile] [key]\n", argv[0]);
+		fprintf(stderr, "usage: %s [datafile] [indexfile] [key]\n", argv[0]);
 		return 0;
 	}
 
@@ -22,11 +20,11 @@ main(int argc, char *argv[])
 		fprintf(stderr, "open db %s failed\n", argv[1]);
 		return 0;
 	}
-	
-	if ((vlen = db_get(&db, argv[3], strlen(argv[3]), val, sizeof(val))) != 0) {
-		fwrite(val, sizeof(char), vlen, stdout);
+
+	if (db_del(&db, argv[3], strlen(argv[3])) == DB_OK) {
+		fprintf(stderr, "OK\n");
 	} else {
-		fprintf(stderr, "NOT FOUND\n");
+		fprintf(stderr, "NOT OK\n");
 	}
 	
 	db_close(&db);

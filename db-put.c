@@ -13,13 +13,13 @@ main(int argc, char *argv[])
 	char *val;
 	size_t vlen = 0;
 
-	if (argc != 3 && argc != 4) {
-		fprintf(stderr, "usage: %s [dbfile] [key] [val]\n", argv[0]);
-		fprintf(stderr, "or   : %s [dbfile] [key] < [file]\n", argv[0]);
+	if (argc != 4 && argc != 5) {
+		fprintf(stderr, "usage: %s [datafile] [indexfile] [key] [val]\n", argv[0]);
+		fprintf(stderr, "or   : %s [datafile] [indexfile] [key] < [file]\n", argv[0]);
 		return 0;
 	}
 
-	if (db_open(&db, argv[1], 0) != DB_OK) {
+	if (db_open(&db, argv[1], argv[2], 256, 256, 0) != DB_OK) {
 		fprintf(stderr, "open db %s failed\n", argv[1]);
 		return 0;
 	}
@@ -36,12 +36,12 @@ main(int argc, char *argv[])
 		}
 		vlen = n - 1;
 	} else {
-		vlen = strlen(argv[3]);
+		vlen = strlen(argv[4]);
 		val = malloc(vlen);
-		memcpy(val, argv[3], vlen);
+		memcpy(val, argv[4], vlen);
 	}
 	
-	if (db_put(&db, argv[2], strlen(argv[2]), val, vlen) == DB_OK) {
+	if (db_put(&db, argv[3], strlen(argv[3]), val, vlen) == DB_OK) {
 		fprintf(stderr, "OK\n");
 	} else {
 		fprintf(stderr, "NOT OK\n");

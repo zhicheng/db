@@ -43,7 +43,6 @@ murmur3_hash64(const void *key, size_t len, uint64_t seed)
 	return h;
 }
 
-
 uint64_t
 db_hash(const void *key, size_t len)
 {

@@ -23,17 +23,17 @@ main(int argc, char *argv[])
 	uint32_t start, end;
 	uint32_t size = 0;
 
-        if (argc != 3) {
-                fprintf(stderr, "usage: %s [dbfile] [loop]\n", argv[0]);
+        if (argc != 4) {
+                fprintf(stderr, "usage: %s [datafile] [indexfile] [loop]\n", argv[0]);
                 return 0;
         }
 
-	if (db_open(&db, argv[1], 0) != DB_OK) {
+	if (db_open(&db, argv[1], argv[2], 20, 100000, 0) != DB_OK) {
                 fprintf(stderr, "open db %s failed\n", argv[1]);
                 return 0;
         }
 
-	loop = atoi(argv[2]);
+	loop = atoi(argv[3]);
 
 	memset(val, 0, sizeof(val));
 
@@ -43,7 +43,7 @@ main(int argc, char *argv[])
 	for (i = 0; i < loop; i++) {
 		int ret;
 		klen = sprintf((char *)key, "%016d", i);
-		vlen = sprintf((char *)val, "%0100d", i);
+		vlen = sprintf((char *)val, "%016d", i);
 		ret = db_put(&db, key, klen, val, vlen);
 		if (ret != DB_OK) {
 			printf("set key: %s\n", key);

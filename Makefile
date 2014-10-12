@@ -1,6 +1,6 @@
 CC = cc
 
-CFLAGS = -O2 -Wall -Werror -Wno-long-long -ansi -pedantic -g
+CFLAGS = -Wall -Werror -Wno-long-long -ansi -pedantic -g
 
 SRC = hash.c db.c
 OBJ = $(SRC:.c=.o)
@@ -15,7 +15,7 @@ ifeq ($(UNAME), Linux)
         CFLAGS += -DLINUX
 endif
 
-all: db-put db-get db-bench db-stat
+all: db-put db-get db-del db-iter db-stat db-bench
 
 db-put: db-put.c $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
@@ -23,14 +23,20 @@ db-put: db-put.c $(OBJ)
 db-get: db-get.c $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
-db-bench: db-bench.c $(OBJ)
+db-del: db-del.c $(OBJ)
+	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
+
+db-iter: db-iter.c $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
 db-stat: db-stat.c $(OBJ)
+	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
+
+db-bench: db-bench.c $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
 .c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf db-put db-get db-bench db-stat *.o *.dSYM
+	rm -rf db-put db-get db-del db-iter db-stat db-bench *.o *.dSYM

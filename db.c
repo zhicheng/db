@@ -15,486 +15,666 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-/*
- *  len for count,size for bytes.
- */
+#define DB_MAGIC	0x00004244
+#define DB_MAGIC_INDEX	0x58494244
+#define DB_MAGIC_DATA	0x54444244
+#define DB_VERSION	2
 
-#define DB_MAGIC	0x424400
-#define DB_VERSION	1
-
-/* Changeable,fixed in compile age. */
-#define TABLE_LEN	(256)
-#define TABLE_SIZE	(TABLE_LEN * sizeof(struct table))
-
-/* Changeable,init size depends on TABLE_LEN and hash function. */
-#define SLOT_LEN	(TABLE_LEN * 256)
-#define SLOT_SIZE	(SLOT_LEN * sizeof(struct slot))
-
-/* Changeable,init size. */
-#define DB_SIZE		(DB_HEADER_SIZE + TABLE_SIZE + SLOT_SIZE + 65535)
-
-#define PAGE_ALIGN(ptr,pgsize)	\
-	((char *)(ptr) - (((char *)(ptr) - (char *)NULL) & ((pgsize) - 1)))
+#define PAGE_ALIGN(ptr,pgsz)	\
+	((char *)(ptr) - (((char *)(ptr) - (char *)NULL) & ((pgsz) - 1)))
 
 static int
-db_mmap(db_t *db);
-
-static int
-db_sync(db_t *db, off_t offset, size_t size);
-
-static int
-db_likely(db_t *db, off_t off, size_t len);
-
-static int
-db_unlikely(db_t *db, off_t off, size_t len);
-
-static size_t
-db_file_size(db_t *db);
-
-static int
-db_file_resize(db_t *db, size_t size);
-
-static void
-db_init(db_t *db);
-
-static uint64_t
-db_alloc(db_t *db, uint64_t len);
-
-static int
-db_read(db_t *db, void *buf, off_t off, size_t len);
-
-static int
-db_write(db_t *db, const void *buf, off_t off, size_t len);
-
-static int
-db_cmp(db_t *db, const void *buf, off_t off, size_t len);
-
-static uint64_t
-db_slot_find(db_t *db, uint64_t ptr, uint64_t slot_len,
-	uint64_t hash, const void *key, uint32_t klen);
-
-int
-db_open(db_t *db, const char *filename, int mode)
+db_file_open(db_file_t *file, const char *filename)
 {
-	int    init = 0;
-	size_t size = 0;
+	file->fd = open(filename, O_RDWR | O_CREAT, 0644);
 
-	memset(db, 0, sizeof(struct db));
-
-	db->db_file = open(filename, O_RDWR | O_CREAT, 0644);
-
-	size = db_file_size(db);
-
-	if (size == 0) {
-		db_file_resize(db, DB_SIZE);
-	} else {
-		init = 1;
-	}
-
-	if (db_mmap(db) != DB_OK)
-		return DB_ERR;
-
-	if (!init)
-		db_init(db);
-	else if (db->db_magic != DB_MAGIC || db->db_version != DB_VERSION)
-		return DB_ERR;
-
-	db->db_pgsize = sysconf(_SC_PAGESIZE);
-
-	db_likely(db, 0, DB_HEADER_SIZE + TABLE_SIZE);
+	if (file->fd == -1)
+		return DB_SYS_ERROR;
 
 	return DB_OK;
 }
 
-static void
-db_init(db_t *db)
-{
-	int i;
-	uint64_t slot_ptr = DB_HEADER_SIZE + TABLE_SIZE;
-
-	assert(db && db->db_data);
-
-        db->db_magic		= DB_MAGIC;
-        db->db_version		= DB_VERSION;
-        db->db_size		= db->db_data_size;
-	db->db_slot_ptr		= slot_ptr;
-	db->db_slot_len 	= SLOT_LEN;
-
-	for (i = 0; i < TABLE_LEN; i++) {
-		uint64_t len = db->db_slot_len / TABLE_LEN;
-		uint64_t ptr = slot_ptr + i * sizeof(struct slot) * len;
-
-		db->tables[i].slot_ptr = ptr;
-		db->tables[i].slot_key = 0;
-		db->tables[i].slot_len = len;
-	}
-
-	db->db_free_ptr = slot_ptr + db->db_slot_len * sizeof(struct slot);
-}
-
 static size_t
-db_file_size(db_t *db)
+db_file_size(db_file_t *file)
 {
 	struct stat stat;
 
-	if (fstat(db->db_file, &stat) < 0) {
-		perror("fstat");
+	if (fstat(file->fd, &stat) == -1)
 		return 0;
-	}
 	return stat.st_size;
 }
 
 static int
-db_file_resize(db_t *db, size_t size)
+db_file_resize(db_file_t *file, size_t size)
 {
-	assert(db->db_file);
-
-	if (ftruncate(db->db_file, size) < 0) {
-		perror("ftruncate");
-		return DB_ERR;
-	}
+	if (ftruncate(file->fd, size) == -1)
+		return DB_SYS_ERROR;
 	return DB_OK;
 }
 
 static int
-db_read(db_t *db, void *buf, off_t off, size_t len)
+db_file_read(db_file_t *file, void *buf, off_t off, size_t len)
 {
-	assert(off + len < db->db_size);
+	assert(off + len <= file->buflen);
 
-	memcpy(buf, (uint8_t *)db->db_data + off, len);
+	memcpy(buf, (uint8_t *)file->buf + off, len);
 	return len;
 }
 
 static int
-db_write(db_t *db, const void *buf, off_t off, size_t len)
+db_file_write(db_file_t *file, const void *buf, off_t off, size_t len)
 {
-	assert(off + len < db->db_size);
+	assert(off + len <= file->buflen);
 
-	memcpy((uint8_t *)db->db_data + off, buf, len);
+	memcpy((uint8_t *)file->buf + off, buf, len);
 	return len;
 }
 
 static int
-db_cmp(db_t *db, const void *buf, off_t off, size_t len)
+db_file_compare(db_file_t *file, const void *buf, off_t off, size_t len)
 {
-	assert(off + len < db->db_size);
+	assert(off + len <= file->buflen);
 
-	return memcmp((uint8_t *)db->db_data + off, buf, len);
-}
-
-static int
-db_mmap(db_t *db)
-{
-	assert(db && db->db_file);
-
-	if (db->db_data != NULL) {
-		if (db_sync(db, 0, db->db_data_size) != DB_OK) {
-			return DB_ERR;
-		}
-		if (munmap(db->db_data, db->db_data_size) < 0) {
-			perror("munmap");
-			return DB_ERR;
-		}
-	}
-
-	db->db_data_size = db_file_size(db);
-	db->db_data      = mmap(NULL,
-				db->db_data_size, PROT_READ | PROT_WRITE,
-				MAP_SHARED, db->db_file, 0);
-	if (db->db_data == MAP_FAILED) {
-		perror("mmap");
-		return DB_ERR;
-	}
-	db->header = db->db_data;
-	db->tables = (struct table *)((uint8_t *)db->db_data + DB_HEADER_SIZE);
-
-	return DB_OK;
+	return memcmp((uint8_t *)file->buf + off, buf, len);
 }
 
 static int 
-db_sync(db_t *db, off_t off, size_t len)
+db_file_sync(db_file_t *file, off_t off, size_t len)
 {
-	void *ptr = (uint8_t *)db->db_data + off;
-	if (msync(PAGE_ALIGN(ptr, db->db_pgsize), len, MS_SYNC) < 0) {
-		perror("msync");
-		return DB_ERR;
+	void *ptr;
+	assert(file);
+
+	ptr = (uint8_t *)file->buf + off;
+	if (msync(PAGE_ALIGN(ptr, file->pgsz), len, MS_SYNC) == -1) {
+		return DB_SYS_ERROR;
 	}
 	return DB_OK;
 }
 
 static int
-db_likely(db_t *db, off_t off, size_t len)
+db_file_mmap(db_file_t *file)
 {
-	void *ptr = (uint8_t *)db->db_data + off;
-	if (madvise(PAGE_ALIGN(ptr, db->db_pgsize), len, MADV_WILLNEED) < 0) {
-		perror("madvise");
-		return DB_ERR;
+	int flags;
+
+	assert(file);
+
+	if (file->buf != NULL) {
+		int error;
+		if ((error = db_file_sync(file, 0, file->buflen)) != DB_OK)
+			return error;
+		if (munmap(file->buf, file->buflen) == -1)
+			return DB_SYS_ERROR;
 	}
+
+	file->size = db_file_size(file);
+
+	flags     = PROT_READ | PROT_WRITE;
+	file->buf = mmap(NULL, file->size, flags, MAP_SHARED, file->fd, 0);
+	if (file->buf == MAP_FAILED)
+		return DB_SYS_ERROR;
+	file->buflen = file->size;
+
+	file->header = file->buf;
+
 	return DB_OK;
 }
 
+enum {DB_FILE_ADVISE_UNLIKELY = MADV_WILLNEED,
+      DB_FILE_ADVISE_LIKELY   = MADV_WILLNEED};
+
 static int
-db_unlikely(db_t *db, off_t off, size_t len)
+db_file_advise(db_file_t *file, off_t off, size_t len, int advise)
 {
-	void *ptr = (uint8_t *)db->db_data + off;
-	if (madvise(PAGE_ALIGN(ptr, db->db_pgsize), len, MADV_DONTNEED) < 0) {
-		perror("madvise");
-		return DB_ERR;
-	}
+	void *ptr;
+
+	ptr = PAGE_ALIGN((uint8_t *)file->buf + off, file->pgsz);
+	if (madvise(PAGE_ALIGN(ptr, file->pgsz), len, advise) == -1)
+		return DB_SYS_ERROR;
 	return DB_OK;
 }
+
+#define db_file_likely(file,off,len)	\
+	db_file_advise((file), (off), (len), DB_FILE_ADVISE_LIKELY)
+
+#define db_file_unlikely(file,off,len)	\
+	db_file_advise((file), (off), (len), DB_FILE_ADVISE_LIKELY)
+
 
 static uint64_t
-db_alloc(db_t *db, uint64_t len)
+db_file_alloc(db_file_t *file, uint64_t len)
 {
-	uint64_t ptr;
-	if ((db->db_free_ptr + len) > db->db_size) {
+	int error;
+	uint64_t off; 
+	if ((file->header->data_tail + len) > file->size) {
 
 		/* Changeable,time and space tradeoff */
-		size_t newsize = (db->db_free_ptr + len) * 2;
+		size_t newsize = (file->header->data_tail + len) * 2;
 
-		if (db_file_resize(db, newsize) != DB_OK) {
-			perror("resize");
+		if ((error = db_file_resize(file, newsize)) != DB_OK) {
+			file->db->db_error = error;
 			return 0;
 		}
-		if (db_mmap(db) != DB_OK) {
-			perror("mmap");
+		if ((error = db_file_mmap(file)) != DB_OK) {
+			file->db->db_error = error;
 			return 0;
 		}
-
-		db->db_size = newsize;
 	}
 
-	ptr = db->db_free_ptr;
-	db->db_free_ptr += len;
-	return ptr;
+	off = file->header->data_tail;
+	file->header->data_tail += len;
+	return off;
 }
 
 static uint64_t
-db_calloc(db_t *db, uint64_t len)
+db_file_calloc(db_file_t *file, uint64_t len)
 {
-	uint64_t ptr = db_alloc(db, len);
-	if (ptr == 0)
-		return 0;
+	uint64_t off;
 
-	memset((uint8_t *)db->db_data + ptr, 0, len);
+	off = db_file_alloc(file, len);
+	if (off != 0)
+		memset((uint8_t *)file->buf + off, 0, len);
 
-	return ptr;
+	return off;
 }
 
 static int
-db_table_rehash(db_t *db, uint32_t table)
+db_file_init(db_file_t *file, size_t size)
 {
-	int i;
-	int rehashed;
-	uint64_t slot_ptr;
-	uint64_t slot_len;
-	uint64_t slot_new_ptr;
-	uint64_t slot_new_len;
+	int error;
 
-	/* alloc new slot if not did before */
-	if (db->db_slot_new_ptr == 0) {
-		slot_new_len = db->db_slot_len * 2;
-		slot_new_ptr = db_calloc(db, slot_new_len * sizeof(struct slot));
-		if (slot_new_ptr == 0)
-			return DB_ERR;
+	file->pgsz = sysconf(_SC_PAGESIZE);
 
-		db->db_slot_new_ptr = slot_new_ptr;
-		db->db_slot_new_len = slot_new_len;
+	if (size > db_file_size(file))
+		if ((error = db_file_resize(file, size)) != DB_OK)
+			return error;
 
-		db_likely(db, slot_new_ptr, slot_new_len);
-	}
-
-	slot_ptr = db->tables[table].slot_ptr;
-	slot_len = db->tables[table].slot_len;
-
-	slot_new_len = slot_len * 2;
-	slot_new_ptr = db->db_slot_new_ptr + table * slot_new_len * sizeof(struct slot);
- 
-	/* read old slot from table and insert to new table */
-	for (i = 0; i < slot_len; i++) {
-		uint64_t ptr;
-		struct slot slot;
-
-		db_read(db, &slot, slot_ptr + i * sizeof(struct slot), sizeof(struct slot));
-		if (slot.hash == 0)
-			continue;
-		ptr = db_slot_find(db, slot_new_ptr, slot_new_len, slot.hash, NULL, 0);
-
-		if (ptr == 0)
-			return DB_ERR;
-
-		db_write(db, &slot, ptr, sizeof(struct slot));
-	}
-
-	db->tables[table].slot_ptr = slot_new_ptr;
-	db->tables[table].slot_len = slot_new_len;
-
-	db_sync(db, DB_HEADER_SIZE, TABLE_SIZE);
-	db_sync(db, slot_new_ptr, slot_new_len * sizeof(struct slot));
-
-	rehashed = 1;
-        for (i = 0; i < TABLE_LEN; i++) {
-		struct table *table = &db->tables[i];
-
-		if (table->slot_ptr < db->db_slot_new_ptr) {
-			rehashed = 0;
-			break;
-		}
-        }
-        if (rehashed) {
-		db_unlikely(db, db->db_slot_ptr, db->db_slot_len * sizeof(struct slot));
-		db->db_slot_ptr = db->db_slot_new_ptr;
-		db->db_slot_len = db->db_slot_new_len;
-		db->db_slot_new_ptr = 0;
-		db->db_slot_new_len = 0;
-        }
+	if ((error = db_file_mmap(file)) != DB_OK)
+		return error;
 
 	return DB_OK;
 }
 
 static int
-db_rehash(db_t *db, int table_hint)
+db_file_close(db_file_t *file)
 {
-	if (db->db_slot_new_ptr != 0 &&
-	    db->tables[table_hint].slot_ptr >= db->db_slot_new_ptr) {
+        if (msync(file->buf, file->buflen, MS_SYNC) == -1)
+		return DB_SYS_ERROR;
 
-		/*
-		 * if Hash Collision too High or SLOT_LEN too Small
-		 * May Cause a table rehash again in rehash process
-		 * This make sure the rehash process finished early
-		 * Make table_hint rehash work
-		 *
-		 */
-		int i;
-		for (i = 0; i < TABLE_LEN; i++) {
+        if (munmap(file->buf, file->buflen) == -1)
+		return DB_SYS_ERROR;
 
-			/* rehash finished */
-			if (db->db_slot_new_ptr == 0)
+        if (close(file->fd) == -1)
+		return DB_SYS_ERROR;
+	return DB_OK;
+}
+
+static int
+db_table_read(db_t *db, db_table_t *table, uint64_t off)
+{
+	return db_file_read(db->db_index, table,
+		db->db_index->header->table_off + off * sizeof(db_table_t),
+		sizeof(db_table_t));
+}
+
+static int
+db_table_write(db_t *db, db_table_t *table, uint64_t off)
+{
+	return db_file_write(db->db_index, table,
+		db->db_index->header->table_off + off * sizeof(db_table_t),
+		sizeof(db_table_t));
+}
+
+static int
+db_bucket_read(db_t *db, db_table_t *table, db_bucket_t *bucket, uint64_t off)
+{
+	return db_file_read(db->db_index, bucket,
+		table->bucket_off + off * sizeof(db_bucket_t),
+		sizeof(db_bucket_t));
+}
+
+static int
+db_bucket_write(db_t *db, db_table_t *table, db_bucket_t *bucket, uint64_t off)
+{
+	return db_file_write(db->db_index, bucket,
+		table->bucket_off + off * sizeof(db_bucket_t),
+		sizeof(db_bucket_t));
+}
+
+static int
+db_table_resize(db_t *db, uint64_t table_off, uint64_t bucket_per_table)
+{
+	uint64_t i;
+	uint64_t off;
+
+	uint32_t klen;
+	uint32_t vlen;
+
+	db_table_t old_table;
+	db_table_t new_table;
+
+	vlen = bucket_per_table * sizeof(db_bucket_t);
+	off = db_file_calloc(db->db_index, vlen + sizeof(klen) + sizeof(vlen));
+
+	if (off == 0)
+		return DB_SYS_ERROR;
+
+	/* make db-data can expert data when single file */
+	/* just writer klen = 0, vlen = table size 	 */
+	klen = 0;
+	off += db_file_write(db->db_index, &klen, off, sizeof(klen));
+	off += db_file_write(db->db_index, &vlen, off, sizeof(vlen));
+
+	db_table_read(db, &old_table, table_off);
+
+	new_table.bucket_off = off;
+	new_table.bucket_key = old_table.bucket_key;
+	new_table.bucket_len = bucket_per_table;
+
+	for (i = 0; i < old_table.bucket_len; i++) {
+		uint64_t j;
+		db_bucket_t bucket;
+
+		db_bucket_read(db, &old_table, &bucket, i);
+
+		if (bucket.hash == 0)
+			continue;
+
+		for (j = bucket.hash % bucket_per_table;;
+		     j = (j + 1) % bucket_per_table)
+		{
+			db_bucket_t new_bucket;
+
+			db_bucket_read(db, &new_table, &new_bucket, j);
+			if (new_bucket.hash == 0) {
+				db_bucket_write(db, &new_table, &bucket, j);
 				break;
-
-			/* early rehash all old table */
-			if (db->tables[i].slot_ptr < db->db_slot_new_ptr) {
-				if (db_table_rehash(db, i) != DB_OK)
-					return DB_ERR;
 			}
 		}
 	}
-	return db_table_rehash(db, table_hint);
+
+	db_table_write(db, &new_table, table_off);
+
+	return DB_OK;
 }
 
-
-/*
- * will find the right slot for key
- * return empty slot or the key is equal
- */
-static uint64_t
-db_slot_find(db_t *db, uint64_t ptr, uint64_t slot_len,
-	uint64_t hash, const void *key, uint32_t klen)
+static int
+db_index_init(db_t *db, uint64_t table_len, uint64_t bucket_per_table)
 {
 	uint64_t i;
-	uint64_t j;
-	struct slot slot;
+	uint64_t table_off;
+	assert(db && db->db_index->buf);
 
-	for (i = 0, j = hash; i < slot_len; i++, j++) {
-		j = j % slot_len;
+        db->db_index->header->magic      = DB_MAGIC;
+        db->db_index->header->version    = DB_VERSION;
 
-		db_read(db, &slot, ptr + j * sizeof(struct slot), sizeof(struct slot));
+	db->db_index->header->data_head  = sizeof(db_file_header_t);
+	db->db_index->header->data_tail  = db->db_index->buflen;
 
-		if (slot.hash == 0)
-			return ptr + j * sizeof(struct slot);
+	table_off = db_file_calloc(db->db_index,
+					table_len * sizeof(db_table_t));
+	if (table_off == 0) 
+		return DB_SYS_ERROR;
 
-		if (klen == 0)
-			continue;
+	db->db_index->header->table_off = table_off;
+	db->db_index->header->table_len = table_len;
 
-		if (slot.hash != hash)
-			continue;
-
-		/* klen not equal */
-		if (db_cmp(db, &klen, slot.ptr, sizeof(uint32_t)) != 0)
-			continue;
-
-		/* key not equal */
-		if (db_cmp(db, key, slot.ptr + sizeof(uint32_t) * 2, klen) == 0)
-			return ptr + j * sizeof(struct slot);
+	for (i = 0; i < table_len; i++) {
+		db_table_resize(db, i, bucket_per_table);
 	}
-	return 0;
+
+	return DB_OK;
+}
+
+static int
+db_data_init(db_t *db)
+{
+	assert(db && db->db_data->buf);
+
+        db->db_data->header->magic      = DB_MAGIC;
+        db->db_data->header->version    = DB_VERSION;
+
+	db->db_data->header->data_head  = sizeof(db_file_header_t);
+	db->db_data->header->data_tail  = db->db_data->buflen;
+
+	return DB_OK;
+}
+
+int
+db_open(db_t *db, const char *dataname, const char *indexname,
+	uint64_t table_len, uint64_t bucket_per_table, int mode)
+{
+	int init;
+	int error;
+
+	memset(db, 0, sizeof(struct db));
+
+	if (strcmp(indexname, dataname) == 0)
+		indexname = NULL;
+
+	db->db_data = &db->db_file_data;
+	if ((error = db_file_open(db->db_data, dataname)) != DB_OK)
+		return error;
+
+	if (indexname != NULL) {		/* separate index and data file */
+		db->db_index = &db->db_file_index;
+		if ((error = db_file_open(db->db_index, indexname)) != DB_OK)
+			return error;
+	} else {
+		db->db_index = &db->db_file_data;
+	}
+
+	init  = db_file_size(db->db_index);
+	error = db_file_init(db->db_index, sizeof(db_file_header_t));
+	if (error != DB_OK)
+		return error;
+
+	if (!init) {
+		error = db_index_init(db, table_len, bucket_per_table);
+		if (error != DB_OK)
+			return error;
+	}
+	db->db_table_len = db->db_index->header->table_len;
+
+	init  = db_file_size(db->db_data);
+	error = db_file_init(db->db_data, sizeof(db_file_header_t));
+	if (error != DB_OK)
+		return error;
+
+	if (!init) {
+		if ((error = db_data_init(db)) != DB_OK)
+			return error;
+	}
+
+	if (db->db_index->header->version != DB_VERSION ||
+	    db->db_data->header->version != DB_VERSION)
+	{
+		return DB_SYS_ERROR;
+	}
+
+	if (db->db_index->header->magic != DB_MAGIC && 
+	    db->db_index->header->magic != DB_MAGIC_INDEX)
+	{
+		return DB_SYS_ERROR;
+	}
+
+	if (db->db_data->header->magic != DB_MAGIC && 
+	    db->db_data->header->magic != DB_MAGIC_DATA)
+	{
+		return DB_SYS_ERROR;
+	}
+
+	db_file_likely(db->db_data, 0, sizeof(*db->db_data->header));
+
+	return DB_OK;
 }
 
 int
 db_put(db_t *db, const void *key, uint32_t klen, const void *val, uint32_t vlen)
 {
-	uint32_t len;
-	uint64_t ptr;
+	uint64_t i;
+	uint64_t len;
 	uint64_t data;
-	struct slot slot;
 
-	const uint64_t hash  = db_hash(key, klen);
-	struct table  *table;
+	uint64_t    hash;
+	db_table_t  table;
+	db_bucket_t bucket;
 
-	len  = sizeof(uint32_t) * 2 + klen + vlen;
-	data = db_alloc(db, len);
+	hash = db_hash(key, klen);
+	db_table_read(db, &table, hash % db->db_index->header->table_len);
 
-	data += db_write(db, &klen, data, sizeof(uint32_t));
-	data += db_write(db, &vlen, data, sizeof(uint32_t));                       
-	data += db_write(db, key, data, klen);
-	data += db_write(db, val, data, vlen);
-
-	slot.hash = hash;
-	slot.ptr  = data - len;
-
-	table = &(db->tables[hash % TABLE_LEN]);
-	ptr = db_slot_find(db, table->slot_ptr, table->slot_len, hash, key, klen);
-	if (ptr == 0)
-		return DB_ERR;
-
-	/* write slot */
-	db_write(db, &slot, ptr, sizeof(struct slot));
-
-	table->slot_key = table->slot_key + 1;
-	if ((table->slot_key * 2) > table->slot_len) {
-		if (db_rehash(db, hash % TABLE_LEN) != DB_OK)
-			return DB_ERR;
+	if (((table.bucket_key + 1) * 2) > table.bucket_len) {
+		if (db_table_resize(db, hash % db->db_table_len,
+					table.bucket_len * 2) != DB_OK)
+		{
+			return DB_SYS_ERROR;
+		}
+		db_table_read(db, &table, hash % db->db_table_len);
 	}
 
-	return DB_OK;
+	len  = sizeof(uint32_t) * 2 + klen + vlen;
+
+	data = db_file_alloc(db->db_data, len);
+	if (data == 0)
+		return DB_SYS_ERROR;
+
+	data += db_file_write(db->db_data, &klen, data, sizeof(uint32_t));
+	data += db_file_write(db->db_data, &vlen, data, sizeof(uint32_t));                       
+	data += db_file_write(db->db_data, key, data, klen);
+	data += db_file_write(db->db_data, val, data, vlen);
+
+	bucket.hash = hash;
+	bucket.off  = data - len;
+
+	for (i = hash % table.bucket_len;; i = (i + 1) % table.bucket_len) {
+		db_bucket_t db_bucket;
+
+		db_bucket_read(db, &table, &db_bucket, i);
+		if (db_bucket.hash != 0) {
+			uint64_t koff;
+
+			if (db_bucket.hash != bucket.hash)
+				continue;
+			if (db_file_compare(db->db_data, &klen, db_bucket.off,
+						sizeof(klen)) != 0)
+			{
+				continue;
+			}
+			koff = db_bucket.off + sizeof(klen) + sizeof(vlen);
+			if (db_file_compare(db->db_data, key, koff, klen) != 0)
+				continue;
+		}
+
+		db_bucket_write(db, &table, &bucket, i);
+
+		if (db_bucket.hash == 0) {
+			table.bucket_key += 1;
+			db_table_write(db, &table, hash % db->db_table_len);
+		}
+		return DB_OK;
+	} 
+
+	return DB_SYS_ERROR;
 }
 
 uint32_t
 db_get(db_t *db, const void *key, uint32_t klen, void *val, uint32_t vlen)
 {
-	uint32_t len;
-	uint64_t ptr;
-	uint64_t data;
+	uint64_t i;
 
-	const uint64_t      hash  = db_hash(key, klen);
-	const struct table *table = &db->tables[hash % TABLE_LEN];
+	uint64_t    hash;
+	db_table_t  table;
+	db_bucket_t bucket;
 
-	ptr = db_slot_find(db, table->slot_ptr, table->slot_len, hash, key, klen);
-	if (ptr == 0)
-		return 0;
+	hash = db_hash(key, klen);
+	db_table_read(db, &table, hash % db->db_table_len);
 
-	if (db_cmp(db, &hash, ptr, sizeof(hash)) != 0)
-		return 0;
+	for (i = hash % table.bucket_len;; i = (i + 1) % table.bucket_len) {
+		uint64_t koff;
 
-	db_read(db, &data, ptr + sizeof(hash), sizeof(data));
+		db_bucket_read(db, &table, &bucket, i);
 
-	data += sizeof(uint32_t);	/* skip klen	*/
-	data += db_read(db, &len, data, sizeof(uint32_t));
-	data += klen;			/* skip key	*/
+		if (bucket.hash == 0)
+			break;
 
-	vlen = (len < vlen) ? len : vlen;
-	db_read(db, val, data, vlen);
+		if (bucket.hash != hash)
+			continue;
 
-	return vlen;
+		if (db_file_compare(db->db_data, &klen, bucket.off,
+					sizeof(klen)) != 0)
+		{
+			continue;
+		}
+	
+		koff = bucket.off + sizeof(klen) + sizeof(vlen);
+		if (db_file_compare(db->db_data, key, koff, klen) == 0) {
+			uint32_t len;
+
+			db_file_read(db->db_data, &len,
+					bucket.off + sizeof(klen), sizeof(len));
+
+			if (len < vlen)
+				vlen = len;
+				
+			db_file_read(db->db_data, val, koff + klen, vlen);
+			return len;
+		}
+	}
+
+	return 0;
+}
+
+int
+db_del(db_t *db, const void *key, uint32_t klen)
+{
+	return db_put(db, key, klen, NULL, 0);
+}
+
+int
+db_iter(db_t *db, db_iter_t *iter, const void *key, const uint32_t klen)
+{
+	uint64_t    i;
+	uint64_t    hash;
+	db_table_t  table;
+	db_bucket_t bucket;
+
+	if (key == NULL || klen == 0) {
+		iter->table_off  = 0;
+		iter->bucket_off = 0;
+
+		return DB_OK;
+	}
+
+	hash = db_hash(key, klen);
+	db_table_read(db, &table, hash % db->db_table_len);
+
+	for (i = hash % table.bucket_len;; i = (i + 1) % table.bucket_len) {
+		uint64_t koff;
+
+		db_bucket_read(db, &table, &bucket, i);
+
+		if (bucket.hash == 0)
+			break;
+
+		if (bucket.hash != hash)
+			continue;
+
+		if (db_file_compare(db->db_data, &klen, bucket.off,
+					sizeof(klen)) != 0)
+		{
+			continue;
+		}
+	
+		koff = bucket.off + sizeof(klen) + sizeof(uint32_t);
+		if (db_file_compare(db->db_data, key, koff, klen) == 0) {
+			iter->table_off  = hash % table.bucket_len;
+			iter->bucket_off = i;
+
+			return DB_OK;
+		}
+	}
+
+	return DB_ERROR;
+}
+
+int
+db_iter_next(db_t *db, db_iter_t *iter,
+        void *key, uint32_t *klen, void *val, uint32_t *vlen)
+{
+	uint64_t i;
+	uint64_t j;
+
+	for (i = iter->table_off; i < db->db_table_len; i++) {
+		db_table_t table;
+
+		db_table_read(db, &table, i);
+		for (j = iter->bucket_off; j < table.bucket_len; j++) {
+			uint64_t off;
+			uint32_t dbklen;
+			uint32_t dbvlen;
+			db_bucket_t bucket;
+
+			db_bucket_read(db, &table, &bucket, j);
+			if (bucket.hash == 0)
+				continue;
+
+			off = bucket.off;
+			off += db_file_read(db->db_data, &dbklen, off,
+						sizeof(dbklen));
+			off += db_file_read(db->db_data, &dbvlen, off,
+						sizeof(dbvlen));
+
+			if (dbvlen == 0)
+				continue;
+
+			if (dbklen < *klen)
+				*klen = dbklen;
+
+			if (dbvlen < *vlen)
+				*vlen = dbvlen;
+
+			off += db_file_read(db->db_data, key, off, *klen);
+			off += db_file_read(db->db_data, val, off, *vlen);
+
+			*klen = dbklen;
+			*vlen = dbvlen;
+
+			iter->bucket_off = j + 1;
+			return DB_OK;
+		}
+		iter->table_off += 1;
+		iter->bucket_off = 0;
+	}
+
+	return DB_SYS_ERROR;
+}
+
+int
+db_stat(db_t *db, db_stat_t *stat)
+{
+	int error;
+	uint64_t i;
+	uint32_t klen;
+	uint32_t vlen;
+
+	db_iter_t iter;
+
+	memset(stat, 0, sizeof(db_stat_t));
+
+	stat->db_file_size = db_file_size(db->db_data);
+
+	stat->db_table_min = UINT32_MAX;
+	for (i = 0; i < db->db_table_len; i++) {
+		db_table_t table;
+		db_table_read(db, &table, i);
+
+		if (table.bucket_key > stat->db_table_max)
+			stat->db_table_max = table.bucket_key;
+
+		if (table.bucket_key < stat->db_table_min)
+			stat->db_table_min = table.bucket_key;
+		stat->db_table_total  += table.bucket_key;
+		stat->db_bucket_total += table.bucket_len;
+	}
+	stat->db_table_size  = stat->db_table_total * sizeof(db_table_t);
+	stat->db_bucket_size = stat->db_bucket_total * sizeof(db_bucket_t);
+
+        if ((error = db_iter(db, &iter, NULL, 0)) != DB_OK)
+		return error;
+
+	klen = 0;
+	vlen = 0;
+        while (db_iter_next(db, &iter, NULL, &klen, NULL, &vlen) == DB_OK) {
+		stat->db_data_size += klen;
+		stat->db_data_size += vlen;
+		klen = 0;
+		vlen = 0;
+        }
+
+	return DB_OK;
 }
 
 int
 db_close(db_t *db)
 {
-	msync(db->db_data, db->db_data_size, MS_SYNC);
-	munmap(db->db_data, db->db_data_size);
-	close(db->db_file);
-	return DB_OK;
+	return db_file_close(db->db_data);
 }
-
