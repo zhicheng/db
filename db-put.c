@@ -24,7 +24,7 @@ main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (argc == 3) {
+	if (argc == 4) {
 		int n = 0;
 		vlen = 4096;
 		val = malloc(vlen);
