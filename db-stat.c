@@ -26,14 +26,14 @@ main(int argc, char *argv[])
 		fprintf(stderr, "db_stat error\n");
 	}
 
-        printf("db_file_size: %llu\n", stat.db_file_size);
-        printf("db_table_max: %llu\n", stat.db_table_max);
-        printf("db_table_min: %llu\n", stat.db_table_min);
-        printf("db_table_total: %llu\n", stat.db_table_total);
-        printf("db_table_size: %llu\n", stat.db_table_size);
-        printf("db_bucket_total: %llu\n", stat.db_bucket_total);
-        printf("db_bucket_size: %llu\n", stat.db_bucket_size);
-        printf("db_data_size: %llu\n", stat.db_data_size);
+        printf("db_file_size: %llu\n",    (long long int)stat.db_file_size);
+        printf("db_table_max: %llu\n",    (long long int)stat.db_table_max);
+        printf("db_table_min: %llu\n",    (long long int)stat.db_table_min);
+        printf("db_table_total: %llu\n",  (long long int)stat.db_table_total);
+        printf("db_table_size: %llu\n",   (long long int)stat.db_table_size);
+        printf("db_bucket_total: %llu\n", (long long int)stat.db_bucket_total);
+        printf("db_bucket_size: %llu\n",  (long long int)stat.db_bucket_size);
+        printf("db_data_size: %llu\n",    (long long int)stat.db_data_size);
 	
 	db_close(&db);
 

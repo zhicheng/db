@@ -47,7 +47,7 @@ main(int argc, char *argv[])
 		len++;
 	}
 	
-	printf("len: %llu\n", len);
+	printf("len: %llu\n", (long long int)len);
 	db_close(&db);
 
 	return 0;
