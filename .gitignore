@@ -1,9 +1,11 @@
 *.o
 *.dSYM
 
-db-bench
 db-get
 db-put
 db-stat
 db-del
 db-iter
+db-export
+db-import
+db-bench
