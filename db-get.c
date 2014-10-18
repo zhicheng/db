@@ -28,7 +28,7 @@ main(int argc, char *argv[])
 	} else {
 		fprintf(stderr, "NOT FOUND\n");
 	}
-	
+
 	db_close(&db);
 
 	return 0;
