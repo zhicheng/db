@@ -45,4 +45,4 @@ db-bench: db-bench.c $(OBJ)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf db-put db-get db-del db-iter db-stat db-bench *.o *.dSYM
+	rm -rf db-put db-get db-del db-iter db-stat db-export db-import db-bench *.o *.dSYM
