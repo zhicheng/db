@@ -13,6 +13,7 @@ main(int argc, char *argv[])
 	int loop;
 
 	db_t db;
+	db_option_t option;
 
 	uint8_t key[1024];
 	uint8_t val[1024];
@@ -28,7 +29,10 @@ main(int argc, char *argv[])
                 return 0;
         }
 
-	if (db_open(&db, argv[1], argv[2], 20, 100000, 0) != DB_OK) {
+        option.table  = 20;
+        option.bucket = 100000;
+        option.rdonly = 0;
+	if (db_open(&db, argv[1], argv[2], &option) != DB_OK) {
                 fprintf(stderr, "open db %s failed\n", argv[1]);
                 return 0;
         }

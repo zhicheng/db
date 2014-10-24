@@ -11,13 +11,15 @@ main(int argc, char *argv[])
 {
 	db_t db;
 	db_stat_t stat;
+	db_option_t option;
 
 	if (argc != 3) {
 		fprintf(stderr, "usage: %s [datafile] [indexfile]\n", argv[0]);
 		return 0;
 	}
 
-	if (db_open(&db, argv[1], argv[2], 0, 0, 0) != DB_OK) {
+        option.rdonly = 1;
+	if (db_open(&db, argv[1], argv[2], &option) != DB_OK) {
 		fprintf(stderr, "open db %s failed\n", argv[1]);
 		return 0;
 	}

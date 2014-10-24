@@ -11,6 +11,7 @@ main(int argc, char *argv[])
 {
 	db_t db;
 	db_iter_t iter;
+	db_option_t option;
 
 	char key[1024];
 	char val[1024];
@@ -22,7 +23,8 @@ main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (db_open(&db, argv[1], argv[2], 256, 256, 0) != DB_OK) {
+        option.rdonly = 1;
+	if (db_open(&db, argv[1], argv[2], &option) != DB_OK) {
 		fprintf(stderr, "open db %s failed\n", argv[1]);
 		return 0;
 	}

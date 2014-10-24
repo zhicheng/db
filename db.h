@@ -54,9 +54,9 @@ typedef struct db_file {
         uint64_t  buflen;
 
 	int	 fd;
-        int      mode;
 	int	 pgsz;
 	uint64_t size;
+        int      rdonly;
 
 	db_file_header_t *header;
 } db_file_t;
@@ -75,18 +75,21 @@ typedef struct db {
 	uint64_t db_table_len;
 } db_t;
 
+typedef struct db_option {
+	uint64_t table;
+	uint64_t bucket;
+	uint64_t rdonly;
+} db_option_t;
 
 /*
- * if indexname is NULL or same dataname 
+ * if index is NULL or same data
  * is the single file mode (mixin data and index)
  */
 int
-db_open(db_t *db, const char *dataname, const char *indexname,
-	uint64_t table_len, uint64_t bucket_per_table, int mode);
+db_open(db_t *db, const char *data, const char *index, const db_option_t *option);
 
 int
-db_put(db_t *db, const void *key, uint32_t klen,
-	const void *val, uint32_t vlen);
+db_put(db_t *db, const void *key, uint32_t klen, const void *val, uint32_t vlen);
 
 /*
  * if value size bigger than vlen, val will fill in value 0 ~ vlen 

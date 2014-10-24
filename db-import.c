@@ -11,6 +11,7 @@ main(int argc, char *argv[])
 {
 	int  i;
 	db_t db;
+	db_option_t option;
 
 	uint32_t item;
 	uint32_t klen;
@@ -26,7 +27,10 @@ main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (db_open(&db, argv[1], argv[2], 256, 256, 0) != DB_OK) {
+        option.table  = 256;
+        option.bucket = 256;
+        option.rdonly = 0;
+	if (db_open(&db, argv[1], argv[2], &option) != DB_OK) {
 		fprintf(stderr, "open db %s failed\n", argv[1]);
 		return 0;
 	}

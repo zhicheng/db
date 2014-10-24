@@ -24,12 +24,17 @@
 	((char *)(ptr) - (((char *)(ptr) - (char *)NULL) & ((pgsz) - 1)))
 
 static int
-db_file_open(db_file_t *file, const char *filename)
+db_file_open(db_file_t *file, const char *filename, int rdonly)
 {
-	file->fd = open(filename, O_RDWR | O_CREAT, 0644);
+	if (rdonly)
+		file->fd = open(filename, O_RDONLY, 0644);
+	else
+		file->fd = open(filename, O_RDWR | O_CREAT, 0644);
 
 	if (file->fd == -1)
 		return DB_SYS_ERROR;
+
+	file->rdonly = rdonly;
 
 	return DB_OK;
 }
@@ -47,6 +52,8 @@ db_file_size(db_file_t *file)
 static int
 db_file_resize(db_file_t *file, size_t size)
 {
+	assert(!file->rdonly);
+
 	if (ftruncate(file->fd, size) == -1)
 		return DB_SYS_ERROR;
 	return DB_OK;
@@ -64,6 +71,7 @@ db_file_read(db_file_t *file, void *buf, off_t off, size_t len)
 static int
 db_file_write(db_file_t *file, const void *buf, off_t off, size_t len)
 {
+	assert(!file->rdonly);
 	assert(off + len <= file->buflen);
 
 	memcpy((uint8_t *)file->buf + off, buf, len);
@@ -82,7 +90,9 @@ static int
 db_file_sync(db_file_t *file, off_t off, size_t len)
 {
 	void *ptr;
+
 	assert(file);
+	assert(!file->rdonly);
 
 	ptr = (uint8_t *)file->buf + off;
 	if (msync(PAGE_ALIGN(ptr, file->pgsz), len, MS_SYNC) == -1) {
@@ -94,13 +104,15 @@ db_file_sync(db_file_t *file, off_t off, size_t len)
 static int
 db_file_mmap(db_file_t *file)
 {
+	int prot;
 	int flags;
 
 	assert(file);
 
 	if (file->buf != NULL) {
 		int error;
-		if ((error = db_file_sync(file, 0, file->buflen)) != DB_OK)
+		if (!file->rdonly &&
+		    (error = db_file_sync(file, 0, file->buflen)) != DB_OK)
 			return error;
 		if (munmap(file->buf, file->buflen) == -1)
 			return DB_SYS_ERROR;
@@ -108,8 +120,14 @@ db_file_mmap(db_file_t *file)
 
 	file->size = db_file_size(file);
 
-	flags     = PROT_READ | PROT_WRITE;
-	file->buf = mmap(NULL, file->size, flags, MAP_SHARED, file->fd, 0);
+	if (file->rdonly) {
+		prot  = PROT_READ;
+		flags = MAP_PRIVATE;
+	} else {
+		prot  = PROT_READ | PROT_WRITE;
+		flags = MAP_SHARED;
+	}
+	file->buf = mmap(NULL, file->size, prot, flags, file->fd, 0);
 	if (file->buf == MAP_FAILED)
 		return DB_SYS_ERROR;
 	file->buflen = file->size;
@@ -145,6 +163,9 @@ db_file_alloc(db_file_t *file, uint64_t len)
 {
 	int error;
 	uint64_t off; 
+
+	assert(!file->rdonly);
+
 	if ((file->header->data_tail + len) > file->size) {
 
 		/* Changeable,time and space tradeoff */
@@ -184,7 +205,7 @@ db_file_init(db_file_t *file, size_t size)
 
 	file->pgsz = sysconf(_SC_PAGESIZE);
 
-	if (size > db_file_size(file))
+	if ((size > db_file_size(file)) && !file->rdonly)
 		if ((error = db_file_resize(file, size)) != DB_OK)
 			return error;
 
@@ -298,7 +319,7 @@ db_table_resize(db_t *db, uint64_t table_off, uint64_t bucket_per_table)
 }
 
 static int
-db_index_init(db_t *db, uint64_t table_len, uint64_t bucket_per_table)
+db_index_init(db_t *db, uint64_t table, uint64_t bucket)
 {
 	uint64_t i;
 	uint64_t table_off;
@@ -310,16 +331,15 @@ db_index_init(db_t *db, uint64_t table_len, uint64_t bucket_per_table)
 	db->db_index->header->data_head  = sizeof(db_file_header_t);
 	db->db_index->header->data_tail  = db->db_index->buflen;
 
-	table_off = db_file_calloc(db->db_index,
-					table_len * sizeof(db_table_t));
+	table_off = db_file_calloc(db->db_index, table * sizeof(db_table_t));
 	if (table_off == 0) 
 		return DB_SYS_ERROR;
 
 	db->db_index->header->table_off = table_off;
-	db->db_index->header->table_len = table_len;
+	db->db_index->header->table_len = table;
 
-	for (i = 0; i < table_len; i++) {
-		db_table_resize(db, i, bucket_per_table);
+	for (i = 0; i < table; i++) {
+		db_table_resize(db, i, bucket);
 	}
 
 	return DB_OK;
@@ -340,24 +360,23 @@ db_data_init(db_t *db)
 }
 
 int
-db_open(db_t *db, const char *dataname, const char *indexname,
-	uint64_t table_len, uint64_t bucket_per_table, int mode)
+db_open(db_t *db, const char *data, const char *index, const db_option_t *option)
 {
 	int init;
 	int error;
 
 	memset(db, 0, sizeof(struct db));
 
-	if (strcmp(indexname, dataname) == 0)
-		indexname = NULL;
+	if (strcmp(index, data) == 0)
+		index = NULL;
 
 	db->db_data = &db->db_file_data;
-	if ((error = db_file_open(db->db_data, dataname)) != DB_OK)
+	if ((error = db_file_open(db->db_data, data, option->rdonly)) != DB_OK)
 		return error;
 
-	if (indexname != NULL) {		/* separate index and data file */
+	if (index != NULL) {		/* separate index and data file */
 		db->db_index = &db->db_file_index;
-		if ((error = db_file_open(db->db_index, indexname)) != DB_OK)
+		if ((error = db_file_open(db->db_index, index, option->rdonly)) != DB_OK)
 			return error;
 	} else {
 		db->db_index = &db->db_file_data;
@@ -368,8 +387,8 @@ db_open(db_t *db, const char *dataname, const char *indexname,
 	if (error != DB_OK)
 		return error;
 
-	if (!init) {
-		error = db_index_init(db, table_len, bucket_per_table);
+	if (!init && !option->rdonly) {
+		error = db_index_init(db, option->table, option->bucket);
 		if (error != DB_OK)
 			return error;
 	}
