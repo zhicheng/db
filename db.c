@@ -367,7 +367,7 @@ db_open(db_t *db, const char *data, const char *index, const db_option_t *option
 
 	memset(db, 0, sizeof(struct db));
 
-	if (strcmp(index, data) == 0)
+	if (index != NULL && strcmp(index, data) == 0)
 		index = NULL;
 
 	db->db_data = &db->db_file_data;
