@@ -218,7 +218,7 @@ db_file_init(db_file_t *file, size_t size)
 static int
 db_file_close(db_file_t *file)
 {
-        if (msync(file->buf, file->buflen, MS_SYNC) == -1)
+        if (!file->rdonly && msync(file->buf, file->buflen, MS_SYNC) == -1)
 		return DB_SYS_ERROR;
 
         if (munmap(file->buf, file->buflen) == -1)
