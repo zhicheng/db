@@ -71,7 +71,7 @@ main(int argc, char *argv[])
 				val[vlen++] = strtol(str, NULL, 16);
 			}
 		}
-		if (klen && vlen) {
+		if (klen) {
 			if (db_put(&db, key, klen, val, vlen) == DB_OK) {
 				item += 1;
 			}
