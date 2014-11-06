@@ -80,7 +80,7 @@ main(int argc, char *argv[])
 		vlen = 0;
 	}
 
-	printf("import %u items, status OK\n", item);
+	printf("%u", item);
 	
 	fclose(fp);
 	db_close(&db);

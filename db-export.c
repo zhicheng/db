@@ -61,7 +61,7 @@ main(int argc, char *argv[])
 		item += 1;
 	}
 
-	printf("export %u items, status OK\n", item);
+	printf("%u", item);
 	
 	fclose(fp);
 	db_close(&db);
