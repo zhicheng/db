@@ -1,6 +1,4 @@
-Simple Hash DB for C
-
-Next Release will has Dynamic Hash Implementation
+A New DBM in Pure C
 
 
 Demo:
@@ -8,10 +6,10 @@ Demo:
 db_t db;
 db_option_t option;
 
-option.table  = 256;
-option.bucket = 256;
+option.table  = 256;	/* table number,keep this small if data not too much */
+option.bucket = 256;    /* initialize bucket number in per table,will incrase when key add */
 option.rdonly = 0;
-if (db_open(&db, "foo.db", "foo.db", &option) != DB_OK) {
+if (db_open(&db, /* data file */ "foo.db", /* index file */ "foo.db", &option) != DB_OK) {
         fprintf(stderr, "open db failed\n");
         return 0;
 }
@@ -32,7 +30,7 @@ Limited:
 
 In 32 bit platform database file size is limited 4GiB*
 
-Key/value length is 32 bit unsigned int
+Key/Value length is 32 bit unsigned int
 
 *Depends Your Operation System,Mostly can't get 4GiB map
 
@@ -55,45 +53,45 @@ Design:
                 |    .     |         |  |
                 |    .     |         |  |
                 +----------+         |  |
-                |table[256]|         |  |
+                | table[N] |         |  |
                 +----------+         |  |
-          +-----| slot[0]  |<--------|  |
+          +-----| bucket[0]|<--------|  |
           |     +----------+            |
-          |     | slot[1]  |            |
+          |     | bucket[1]|            |
           |     +----------+            |
-       +--------| slot[2]  |            |
+       +--------| bucket[2]|            |
        |  |     +----------+            |
        |  |     |    .     |            |
        |  |     |    .     |<-----------+
        |  |     |    .     |
        |  |     +----------+
-       |  |     | slot[N]  |
+       |  |     | bucket[N]|
        |  |     +----------+
-       |  +---->| key len  |
+       |  +---->|   klen   |
        |        +----------+
-       |        | val len  |
+       |        |   vlen   |
        |        +----------+
        |        |    .     |
-       |        | key len  |
+       |        |   klen   |
        |        |  bytes   |
        |        |    .     |
        |        +----------+
        |        |    .     |
-       |        | val len  |
+       |        |   vlen   |
        |        |  bytes   |
        |        |    .     |
        |        +----------+
-       +------->| key len  |
+       +------->|   klen   |
                 +----------+
-                | val len  |
+                |   vlen   |
                 +----------+
                 |    .     |
-                | key len  |
+                |   klen   |
                 |  bytes   |
                 |    .     |
                 +----------+
                 |    .     |
-                | val len  |
+                |   vlen   |
                 |  bytes   |
                 |    .     |
                 +----------+
@@ -107,6 +105,11 @@ Goal:
 =====
 
 Keep it simple, stupid
+
+Next Release will has Dynamic Hash Implementation*
+And Mmap Maybe not required.
+
+*Litwin, Witold (1980), "Linear hashing: A new tool for file and table addressing"
 
 
 FAQ:
