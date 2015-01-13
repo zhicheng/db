@@ -119,8 +119,7 @@ Q: Do you use `mmap'? What if I don't want use `mmap'?
 A: Yes.Just use others,there is a lot of key/value database you can choose.
 
 Q: I tried this library,It's waste to much disk space and memory!
-A: I'll write compaction function later,will reduce disk space use.
-   Memory is control by the kernel,Sorry.
+A: I'll write compaction function later,will reduce disk space in high update application,you can use db-export and db-import to a new database file.The future compaction function will do same thing.Memory is control by the kernel,Sorry.
 
 Q: Compression?
 A: Maybe.
