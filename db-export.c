@@ -52,7 +52,7 @@ main(int argc, char *argv[])
 		for (i = 0; i < klen; i++)
 			fprintf(fp, "%02x", key[i]);
 		fprintf(fp, "\n");
-		for (i = 0; i < klen; i++)
+		for (i = 0; i < vlen; i++)
 			fprintf(fp, "%02x", val[i]);
 		fprintf(fp, "\n");
 
