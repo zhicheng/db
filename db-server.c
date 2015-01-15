@@ -53,7 +53,7 @@ enum {HANDLE_CLOSE, HANDLE_FINISH, HANDLE_NEEDMOREIN, HANDLE_NEEDMOREOUT};
 #define ARGV_MAX	1024			/* also max key size */
 
 ssize_t
-sbuf_send(int fd, sbuf_t *buf, ssize_t *snd)
+sbuf_send(const int fd, sbuf_t *buf, ssize_t *snd)
 {
 	ssize_t len;
 
@@ -76,7 +76,7 @@ sbuf_send(int fd, sbuf_t *buf, ssize_t *snd)
 }
 
 ssize_t
-sbuf_recv(int fd, sbuf_t *buf, ssize_t *rcv)
+sbuf_recv(const int fd, sbuf_t *buf, ssize_t *rcv)
 {
 	ssize_t len;
 
@@ -98,7 +98,7 @@ sbuf_recv(int fd, sbuf_t *buf, ssize_t *rcv)
 }
 
 void
-sbuf_allocate(sbuf_t *buf, char *data, ssize_t size)
+sbuf_allocate(sbuf_t *buf, char *data, const ssize_t size)
 {
 	buf->max = size;
 	buf->len = 0;
@@ -116,7 +116,7 @@ sbuf_release(sbuf_t *buf)
 }
 
 int
-keylen(char *key, int maxlen)
+keylen(const char *key, const int maxlen)
 {
 	char *p = (char *)memchr(key, ' ', maxlen);
 	if (p == NULL)
@@ -127,16 +127,17 @@ keylen(char *key, int maxlen)
 }
 
 int
-argparse(char *buf, ssize_t buflen, int *argc, char argv[][ARGV_MAX], int max)
+argparse(const char *buf, const ssize_t buflen,
+	int *argc, char argv[][ARGV_MAX], const int max)
 {
 	int i;
+
+	int p;
+	int c;
 
 	int arg;
 	int len;
 	int end;
-
-	int p;
-	int c;
 
 	assert(buflen > 0);
 
@@ -151,13 +152,11 @@ argparse(char *buf, ssize_t buflen, int *argc, char argv[][ARGV_MAX], int max)
 			goto err;
 
 		switch (c) {
-		case '\r':
-			break;
 		case '\n':
 			if (p != '\r')
 				goto err;
-			i--;
-			end = 1;
+			goto out;
+		case '\r':
 		case ' ':
 			memcpy(argv[arg], buf + i - len, len);
 			argv[arg][len] = '\0';
@@ -166,10 +165,6 @@ argparse(char *buf, ssize_t buflen, int *argc, char argv[][ARGV_MAX], int max)
 
 			len  = 0;
 			arg += 1;;
-			if (end) {
-				i += 2;
-				goto out;
-			}
 			break;
 		default:
 			len++;
@@ -181,13 +176,13 @@ argparse(char *buf, ssize_t buflen, int *argc, char argv[][ARGV_MAX], int max)
 	return 0;
 out:
 	*argc = arg;
-	return i;
+	return (i + 1);
 err:
 	return -1;
 }
 
 int
-handle(int fd, db_t *db, sbuf_t *in, sbuf_t *out)
+handle(const int fd, db_t *db, sbuf_t *in, sbuf_t *out)
 {
 	ssize_t err;
 	ssize_t len;
@@ -276,7 +271,7 @@ handle(int fd, db_t *db, sbuf_t *in, sbuf_t *out)
 }
 
 int
-handle_write(int fd, fd_set *readfds, fd_set *writefds)
+handle_write(const int fd, fd_set *readfds, fd_set *writefds)
 {
 	sbuf_t *in;
 	sbuf_t *out;
@@ -287,7 +282,7 @@ handle_write(int fd, fd_set *readfds, fd_set *writefds)
 	in  = &conn[fd].in;
 	out = &conn[fd].out;
 
-	if (out->buf == NULL || out->len == 0) {
+	if (out->buf == NULL || out->len == 0 || out->off >= out->len) {
 		FD_CLR(fd, writefds);
 
 		return 0;
@@ -309,7 +304,7 @@ handle_write(int fd, fd_set *readfds, fd_set *writefds)
 }
 
 int
-handle_read(int fd, db_t *db, fd_set *readfds, fd_set *writefds)
+handle_read(const int fd, db_t *db, fd_set *readfds, fd_set *writefds)
 {
 	sbuf_t *in;
 	sbuf_t *out;
@@ -331,7 +326,7 @@ handle_read(int fd, db_t *db, fd_set *readfds, fd_set *writefds)
 		if (outbuf == NULL) {
 			outbuf = malloc(OUTBUF_LEN);
 		}
-		sbuf_allocate(out, outbuf, INBUF_LEN);
+		sbuf_allocate(out, outbuf, OUTBUF_LEN);
 
 		outbuf = NULL;
 	}
@@ -396,7 +391,7 @@ handle_read(int fd, db_t *db, fd_set *readfds, fd_set *writefds)
 }
 
 int
-handle_accept(int fd, fd_set *readfds, fd_set *writefds)
+handle_accept(const int fd, fd_set *readfds, fd_set *writefds)
 {
 	ss_t addr;
 	sl_t addrlen;
@@ -409,12 +404,14 @@ handle_accept(int fd, fd_set *readfds, fd_set *writefds)
 	acceptfd = accept(fd, (sa_t *)&addr, &addrlen);
 
 	if (acceptfd == -1) {
-		perror("accept");
+		fprintf(stdout, "db-server: accept: %s\n", strerror(errno));
 
 		return -1;
 	}
 
 	if (acceptfd >= FD_SETSIZE) {
+		fprintf(stdout, "db-server: socket %d closed,can't take more fd\n", fd);
+
 		close(acceptfd);
 
 		return -1;
@@ -431,9 +428,9 @@ handle_accept(int fd, fd_set *readfds, fd_set *writefds)
 		in_addr = NULL;
 	}
 	if (inet_ntop(addr.ss_family, in_addr, addrstr, sizeof(addrstr)) == NULL) {
-		perror("inet_ntop");
+		fprintf(stdout, "db-server: socket %d unknown address family\n", fd);
 	}
-	printf("db-server: new connection from %s on " "socket %d\n", addrstr, acceptfd);
+	printf("db-server: new connection from %s on socket %d\n", addrstr, acceptfd);
 
 	return acceptfd;
 }
@@ -460,16 +457,15 @@ main(int argc, char *argv[])
 		return 0;
 	}
 
-	bzero(&hints, sizeof(hints));
+	memset(&hints, 0, sizeof(hints));
 	
-	FD_ZERO(&readfds);
-
 	hints.ai_family   = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags    = AI_PASSIVE;
 
 	if ((err = getaddrinfo(NULL, PORT, &hints, &ai)) != 0) {
-		fprintf(stderr, "db-server: %s\n", gai_strerror(err));
+		fprintf(stderr, "db-server: getaddrinfo: %s\n", gai_strerror(err));
+
 		exit(1);
 	}
 
@@ -477,21 +473,35 @@ main(int argc, char *argv[])
 		int optval = 1;
 
 		socketfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-		if (socketfd < 0) 
-			continue;
-		fcntl(socketfd, F_SETFL, O_NONBLOCK);
+		if (socketfd == -1) {
+			fprintf(stderr, "db-server: socket: %s\n", gai_strerror(err));
 
-		setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int));
+			continue;
+		}
+		if (fcntl(socketfd, F_SETFL, O_NONBLOCK) == -1) {
+			fprintf(stderr, "db-server: fcntl NONBLOCK: %s\n", strerror(errno));
+
+			continue;
+		}
+
+		if (setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1) {
+			fprintf(stderr, "db-server: setsockopt REUSEADDR: %s\n", strerror(errno));
+
+			continue;
+		}
 
 		if (bind(socketfd, p->ai_addr, p->ai_addrlen) < 0) {
+			fprintf(stderr, "db-server: bind: %s\n", strerror(errno));
+
 			close(socketfd);
+
 			continue;
 		}
 		break;
 	}
 
 	if (p == NULL) {
-		fprintf(stderr, "db-server: failed to bind\n");
+		fprintf(stderr, "db-server: failed to bind: %s\n", PORT);
 		exit(1);
 	}
 
@@ -507,15 +517,16 @@ main(int argc, char *argv[])
         }
 
 	if (listen(socketfd, 32) == -1) {
-		perror("db-server: listen");
-		fprintf(stderr, "db-server: listen %s %s\n", PORT, strerror(errno));
+		fprintf(stderr, "db-server: listen: %s\n", strerror(errno));
 
 		exit(1);
 	}
 
-	FD_SET(socketfd, &readfds);
+	FD_ZERO(&readfds);
+	FD_ZERO(&writefds);
 
 	nfds = socketfd;
+	FD_SET(socketfd, &readfds);
 
 	inbuf  = malloc(INBUF_LEN);
 	outbuf = malloc(OUTBUF_LEN);
@@ -539,29 +550,33 @@ main(int argc, char *argv[])
 #endif
 
 		if ((n = select(nfds + 1, &readfds_, &writefds_, NULL, NULL)) == -1) {
-			fprintf(stderr, "db-server: select %s\n", strerror(errno));
+			fprintf(stderr, "db-server: select: %s\n", strerror(errno));
 
 			exit(1);
 		}
 
-		for (fd = 0; fd <= nfds; fd++) {
+		for (fd = 0; fd <= nfds && n > 0; fd++) {
 			if (FD_ISSET(fd, &writefds_)) {
+				n--;
 				handle_write(fd, &readfds, &writefds);
 			}
 
 			if (FD_ISSET(fd, &readfds_)) {
+				n--;
 				if (fd == socketfd) {
-					int newfd;
+					int acceptfd;
 
-					newfd = handle_accept(fd, &readfds, &writefds);
-					if (newfd > nfds) {
-						nfds = newfd;
+					acceptfd = handle_accept(fd, &readfds, &writefds);
+					if (acceptfd > nfds) {
+						nfds = acceptfd;
 					}
 				} else {
 					err = handle_read(fd, &db, &readfds, &writefds);
 					if (err == -1 && fd >= nfds) {
 						nfds = fd;
-						while (!FD_ISSET(nfds, &readfds)) {
+						while (FD_ISSET(nfds, &readfds)  == 0 &&
+						       FD_ISSET(nfds, &writefds) == 0)
+						{
 							nfds--;
 						}
 					}
@@ -575,4 +590,3 @@ main(int argc, char *argv[])
 
 	return 0;
 }
-
