@@ -21,8 +21,8 @@ main(int argc, char *argv[])
 	uint32_t klen, vlen;
 
         struct timeval tv;
-	uint32_t start, end;
-	uint32_t size = 0;
+	uint64_t start, end;
+	uint64_t size = 0;
 
         if (argc != 4) {
                 fprintf(stderr, "usage: %s [datafile] [indexfile] [loop]\n", argv[0]);
