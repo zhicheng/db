@@ -137,14 +137,12 @@ argparse(const char *buf, const ssize_t buflen,
 
 	int arg;
 	int len;
-	int end;
 
 	assert(buflen > 0);
 
 	p   = 0;
 	arg = 0;
 	len = 0;
-	end = 0;
 	for (i = 0; i < buflen; i++) {
 		c = buf[i];
 
