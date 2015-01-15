@@ -417,8 +417,14 @@ handle_accept(const int fd, fd_set *readfds, fd_set *writefds)
 		return -1;
 	}
 
-	FD_SET(acceptfd, readfds);
-	fcntl(acceptfd, F_SETFL, O_NONBLOCK);
+
+	if (fcntl(acceptfd, F_SETFL, O_NONBLOCK) == -1) {
+		fprintf(stdout, "db-server: socket %d fcntl NONBLOCK: %s\n", fd, strerror(errno));
+
+		close(acceptfd);
+
+		return -1;
+	}
 
 	if (addr.ss_family == AF_INET) {
 		in_addr = &((si_t *)&addr)->sin_addr;
@@ -432,6 +438,8 @@ handle_accept(const int fd, fd_set *readfds, fd_set *writefds)
 	}
 	printf("db-server: new connection from %s on socket %d\n", addrstr, acceptfd);
 
+	FD_SET(acceptfd, readfds);
+
 	return acceptfd;
 }
 
@@ -439,20 +447,28 @@ int
 main(int argc, char *argv[])
 {
 	int err;
+	int nfds;
+	int socketfd;
 
         db_t db;
         db_option_t option;
 
-	int    nfds;
 	fd_set readfds;
 	fd_set writefds;
 
-	int socketfd;
+	char *dbfilename;
+	char *idxfilename;
 
 	struct addrinfo hints, *ai, *p;
 
-	if (argc != 3) {
-		fprintf(stderr, "usage: %s [databfile] [indexfile]\n", argv[0]);
+	if (argc == 2) {
+		dbfilename  = argv[1];
+		idxfilename = NULL;
+	} else if (argc != 3) {
+		dbfilename  = argv[1];
+		idxfilename = argv[2];
+	} else {
+		fprintf(stderr, "usage: %s dbfile [indexfile]\n", argv[0]);
 
 		return 0;
 	}
@@ -510,8 +526,8 @@ main(int argc, char *argv[])
         option.table  = 256;
         option.bucket = 256;
         option.rdonly = 0;
-        if (db_open(&db, argv[1], argv[2], &option) != DB_OK) {
-                fprintf(stderr, "db-server: open db %s failed\n", argv[1]);
+        if (db_open(&db, dbfilename, idxfilename, &option) != DB_OK) {
+                fprintf(stderr, "db-server: open db %s failed\n", dbfilename);
 
                 exit(0);
         }
