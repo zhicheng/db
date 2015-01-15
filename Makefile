@@ -15,7 +15,7 @@ ifeq ($(UNAME), Linux)
         CFLAGS += -DLINUX
 endif
 
-all: db-put db-get db-del db-iter db-stat db-export db-import db-bench
+all: db-put db-get db-del db-iter db-stat db-export db-import db-bench db-server
 
 db-put: db-put.c $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
@@ -41,8 +41,11 @@ db-import: db-import.c $(OBJ)
 db-bench: db-bench.c $(OBJ)
 	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
+db-server: db-server.c $(OBJ)
+	$(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
+
 .c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf db-put db-get db-del db-iter db-stat db-export db-import db-bench *.o *.dSYM
+	rm -rf db-put db-get db-del db-iter db-stat db-export db-import db-bench db-server *.o *.dSYM

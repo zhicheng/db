@@ -39,6 +39,12 @@ main(int argc, char *argv[])
 	vlen = sizeof(val);
 	while (db_iter_next(&db, &iter, key, &klen, val, &vlen) == DB_OK) {
 		char buf[1024];
+		if (klen + vlen + 3 > sizeof(buf)) {
+			if (klen > 510)
+				klen = 510;
+			if (vlen > 510)
+				vlen = 510;
+		}
 		memcpy(buf,                   key, klen);
 		memcpy(buf + klen,            ": ", 2);
 		memcpy(buf + klen + 2,        val, vlen);
