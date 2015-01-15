@@ -454,7 +454,7 @@ main(int argc, char *argv[])
 
 	struct addrinfo hints, *ai, *p;
 
-	if (argc != 4) {
+	if (argc != 3) {
 		fprintf(stderr, "usage: %s [databfile] [indexfile]\n", argv[0]);
 
 		return 0;
