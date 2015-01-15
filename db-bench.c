@@ -29,8 +29,8 @@ main(int argc, char *argv[])
                 return 0;
         }
 
-        option.table  = 20;
-        option.bucket = 100000;
+        option.table  = 256;
+        option.bucket = 256;
         option.rdonly = 0;
 	if (db_open(&db, argv[1], argv[2], &option) != DB_OK) {
                 fprintf(stderr, "open db %s failed\n", argv[1]);
@@ -45,12 +45,10 @@ main(int argc, char *argv[])
         gettimeofday(&tv, NULL);
         start = tv.tv_sec * 1000 + tv.tv_usec / 1000;
 	for (i = 0; i < loop; i++) {
-		int ret;
 		klen = sprintf((char *)key, "%016d", i);
-		vlen = sprintf((char *)val, "%016d", i);
-		ret = db_put(&db, key, klen, val, vlen);
-		if (ret != DB_OK) {
-			printf("set key: %s\n", key);
+		vlen = sprintf((char *)val, "%0128d", i);
+		if (db_put(&db, key, klen, val, vlen) != DB_OK) {
+			printf("db_put error: %s\n", key);
 			break;
 		}
 		size += klen + vlen;
@@ -58,18 +56,18 @@ main(int argc, char *argv[])
 	gettimeofday(&tv, NULL);
         end = tv.tv_sec * 1000 + tv.tv_usec / 1000;
 	printf("write: %6.3f MB/s\n", size / 1024.0/1024.0 /(end - start) * 1000);
+	printf("write: %6.3f Keys/s\n",  (float)loop /(end - start) * 1000);
 
 	memset(val, 0, sizeof(val));
 
 	size = 0;
 	start = end;
 	for (i = 0; i < loop; i++) {
-		int ret;
 		klen = sprintf((char *)key, "%016d", i);
-		ret = db_get(&db, key, klen, val, sizeof(val));
-		size += klen + 100;
-		if (ret == 0) {
-			printf("get key: %s\n", key);
+		vlen = db_get(&db, key, klen, val, sizeof(val));
+		size += klen + vlen;
+		if (vlen == 0) {
+			printf("db_get error: %s\n", key);
 			break;
 		}
 	}
@@ -77,6 +75,7 @@ main(int argc, char *argv[])
 	gettimeofday(&tv, NULL);
         end = tv.tv_sec * 1000 + tv.tv_usec / 1000;
 	printf("read: %6.3f MB/s\n", size / 1024.0/1024.0 /(end - start) * 1000);
+	printf("read: %6.3f Keys/s\n",  (float)loop /(end - start) * 1000);
 	
 	db_close(&db);
 
