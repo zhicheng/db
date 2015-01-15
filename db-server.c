@@ -454,6 +454,12 @@ main(int argc, char *argv[])
 
 	struct addrinfo hints, *ai, *p;
 
+	if (argc != 4) {
+		fprintf(stderr, "usage: %s [databfile] [indexfile]\n", argv[0]);
+
+		return 0;
+	}
+
 	bzero(&hints, sizeof(hints));
 	
 	FD_ZERO(&readfds);
